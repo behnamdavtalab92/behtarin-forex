@@ -3,6 +3,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
+import TradeHistory from './components/features/TradeHistory';
 import TradeNotification from './components/features/TradeNotification';
 import { useTradeSocket } from './hooks/useTradeSocket';
 
@@ -29,6 +30,7 @@ function AppContent() {
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/admin" element={<AdminPanel />} />
+        <Route path="/history" element={<TradeHistory />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </div>

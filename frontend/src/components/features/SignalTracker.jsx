@@ -1,10 +1,34 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MoreVertical, ArrowLeft, Bell } from 'lucide-react';
+import { MoreVertical, ArrowLeft, Bell, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTradeSocket } from '../../hooks/useTradeSocket';
 import { getPositions } from '../../services/api';
 import { formatPrice } from '../../utils/pipCalculator';
+
+// Helper function to move signal to history
+const moveToHistory = (signal) => {
+  try {
+    const saved = localStorage.getItem('behtarin_closed_signals');
+    const history = saved ? JSON.parse(saved) : [];
+    
+    // Add close time
+    signal.closeTime = Date.now();
+    
+    // Add to beginning of history
+    history.unshift(signal);
+    
+    // Keep only last 100 signals
+    if (history.length > 100) {
+      history.splice(100);
+    }
+    
+    localStorage.setItem('behtarin_closed_signals', JSON.stringify(history));
+    console.log('📁 Moved to history:', signal.id);
+  } catch (e) {
+    console.error('Error moving to history:', e);
+  }
+};
 
 export default function SignalTracker() {
   const navigate = useNavigate();
@@ -225,26 +249,32 @@ export default function SignalTracker() {
                 
                 console.log('Total P/L calculation:', partialProfits.toFixed(2), '+', profit.toFixed(2), '=', totalProfit.toFixed(2));
                 
-                return {
-                  ...prev,
-                  [code]: {
-                    ...prev[code],
-                    status: 'closed',
-                    closePrice: price,
-                    closeProfit: totalProfit, // Total of all actions
-                    closeTime: new Date().toISOString(),
-                    actions: [
-                      ...existingActions,
-                      {
-                        type: 'closed',
-                        price,
-                        profit, // This action's profit
-                        volume: prevData.volume?.toFixed(2),
-                        timestamp: new Date().toISOString()
-                      }
-                    ]
-                  }
+                // Create the closed signal
+                const closedSignal = {
+                  ...prev[code],
+                  status: 'closed',
+                  closePrice: price,
+                  closeProfit: totalProfit,
+                  totalProfit: totalProfit,
+                  closeTime: new Date().toISOString(),
+                  actions: [
+                    ...existingActions,
+                    {
+                      type: 'closed',
+                      price,
+                      profit,
+                      volume: prevData.volume?.toFixed(2),
+                      timestamp: new Date().toISOString()
+                    }
+                  ]
                 };
+                
+                // Move to history
+                moveToHistory(closedSignal);
+                
+                // Remove from active signals
+                const { [code]: removed, ...remaining } = prev;
+                return remaining;
               });
             }
           });
@@ -355,7 +385,13 @@ export default function SignalTracker() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => navigate('/history')} 
+            className="p-2 hover:bg-white/10 rounded-lg transition"
+          >
+            <History size={20} className="text-gray-400" />
+          </button>
           <MoreVertical size={20} className="text-gray-400" />
         </div>
       </div>
