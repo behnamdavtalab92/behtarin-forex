@@ -111,9 +111,9 @@ export default function Login() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0e1621] flex flex-col pt-[env(safe-area-inset-top)]">
+    <div className="min-h-[100dvh] bg-[#0e1621] flex flex-col pt-[env(safe-area-inset-top)] overflow-y-auto">
       {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 py-8">
         {/* Logo */}
         <Logo />
 
