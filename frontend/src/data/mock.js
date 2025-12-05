@@ -1,0 +1,76 @@
+export const SIGNALS = [
+  {
+    id: 1,
+    symbol: 'XAUUSD',
+    type: 'SELL',
+    entry: '4215 - 4218',
+    stopLoss: 4221,
+    takeProfit: 'Multi-Target',
+    targets: [4213, 4211, 4208, 4205, 4200],
+    time: 'Just now',
+    status: 'ACTIVE',
+    comment: '🔴 فروش طلا - نقاط ورود: 4215 و 4218 | 🆔 t.me/behtarinforex',
+    isGold: true,
+    likes: 450,
+    comments: 35,
+    shares: 80,
+    saves: 250,
+    reactions: { star: 30, fire: 15, heart: 20, pray: 8 }
+  },
+  {
+    id: 2,
+    symbol: 'EURUSD',
+    type: 'BUY',
+    entry: '1.0850',
+    stopLoss: 1.0820,
+    takeProfit: 1.0900,
+    time: '15 min ago',
+    isGold: false,
+    likes: 150,
+    comments: 5,
+    shares: 20,
+    saves: 80,
+    reactions: { star: 5, fire: 2, heart: 10, pray: 0 }
+  },
+  {
+    id: 3,
+    symbol: 'GBPUSD',
+    type: 'BUY',
+    entry: '1.2640',
+    stopLoss: 1.2610,
+    takeProfit: 1.2700,
+    time: '1 hour ago',
+    isGold: false,
+    likes: 180,
+    comments: 8,
+    shares: 30,
+    saves: 95,
+    reactions: { star: 8, fire: 3, heart: 5, pray: 1 }
+  },
+    {
+    id: 4,
+    symbol: 'XAUUSD',
+    type: 'SELL',
+    entry: '4113 - 4116',
+    stopLoss: 4120,
+    takeProfit: 'Multi-Target',
+    targets: [4111, 4109, 4106, 4103, 4098],
+    time: '2 mins ago',
+    status: 'ACTIVE',
+    image: null,
+    comment: 'Gold breakdown from resistance.',
+    isGold: true,
+    likes: 320,
+    comments: 25,
+    shares: 60,
+    saves: 200,
+    reactions: { star: 20, fire: 10, heart: 15, pray: 5 }
+  },
+];
+
+export const NEWS = [
+  { id: 1, title: 'US GDP Growth Exceeds Expectations', time: '10:00 AM', impact: 'HIGH' },
+  { id: 2, title: 'Eurozone Inflation Data Released', time: '09:30 AM', impact: 'MEDIUM' },
+  { id: 3, title: 'BoJ Interest Rate Decision Upcoming', time: '08:00 AM', impact: 'HIGH' },
+];
+
