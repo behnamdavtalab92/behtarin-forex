@@ -148,45 +148,54 @@ export default function Login() {
             </motion.div>
           ))}
 
-          {/* Notification Toggle */}
-          {notifSupported && (
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.4 }}
+          {/* Notification Toggle - Always visible */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <button
+              onClick={notifSupported ? toggleNotifications : () => alert('برای فعال کردن نوتیفیکیشن، اپ را به صفحه اصلی اضافه کنید (Add to Home Screen)')}
+              disabled={notifLoading}
+              className={`w-full p-4 rounded-2xl border flex items-center gap-3 transition-all ${
+                notifEnabled 
+                  ? 'bg-green-500/10 border-green-500/30' 
+                  : notifSupported 
+                    ? 'bg-white/5 border-white/10'
+                    : 'bg-orange-500/10 border-orange-500/30'
+              }`}
             >
-              <button
-                onClick={toggleNotifications}
-                disabled={notifLoading}
-                className={`w-full p-4 rounded-2xl border flex items-center gap-3 transition-all ${
-                  notifEnabled 
-                    ? 'bg-green-500/10 border-green-500/30' 
-                    : 'bg-white/5 border-white/10'
-                }`}
-              >
-                <div className={`p-3 rounded-xl flex-shrink-0 ${notifEnabled ? 'bg-green-500/20' : 'bg-gray-500/20'}`}>
-                  {notifLoading ? (
-                    <Loader2 size={24} className="text-gray-400 animate-spin" />
-                  ) : notifEnabled ? (
-                    <Bell size={24} className="text-green-400" />
-                  ) : (
-                    <BellOff size={24} className="text-gray-400" />
-                  )}
+              <div className={`p-3 rounded-xl flex-shrink-0 ${
+                notifEnabled ? 'bg-green-500/20' : notifSupported ? 'bg-gray-500/20' : 'bg-orange-500/20'
+              }`}>
+                {notifLoading ? (
+                  <Loader2 size={24} className="text-gray-400 animate-spin" />
+                ) : notifEnabled ? (
+                  <Bell size={24} className="text-green-400" />
+                ) : (
+                  <BellOff size={24} className={notifSupported ? 'text-gray-400' : 'text-orange-400'} />
+                )}
+              </div>
+              <div className="flex-1 text-left">
+                <div className="text-white font-semibold text-base">
+                  {notifEnabled ? 'نوتیفیکیشن فعال' : notifSupported ? 'نوتیفیکیشن غیرفعال' : 'نوتیفیکیشن'}
                 </div>
-                <div className="flex-1 text-left">
-                  <div className="text-white font-semibold text-base">
-                    {notifEnabled ? 'نوتیفیکیشن فعال' : 'نوتیفیکیشن غیرفعال'}
-                  </div>
-                  <div className="text-gray-500 text-xs">
-                    {notifEnabled ? 'برای غیرفعال کردن کلیک کنید' : 'برای دریافت اعلان‌ها فعال کنید'}
-                  </div>
+                <div className="text-gray-500 text-xs">
+                  {notifEnabled 
+                    ? 'برای غیرفعال کردن کلیک کنید' 
+                    : notifSupported 
+                      ? 'برای دریافت اعلان‌ها فعال کنید'
+                      : 'Add to Home Screen برای فعال‌سازی'
+                  }
                 </div>
-                <div className={`w-12 h-6 rounded-full transition-all flex-shrink-0 ${notifEnabled ? 'bg-green-500' : 'bg-gray-600'} relative`}>
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${notifEnabled ? 'right-0.5' : 'right-6'}`} />
-                </div>
-              </button>
-            </motion.div>
-          )}
+              </div>
+              <div className={`w-12 h-6 rounded-full transition-all flex-shrink-0 ${
+                notifEnabled ? 'bg-green-500' : notifSupported ? 'bg-gray-600' : 'bg-orange-600'
+              } relative`}>
+                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all duration-200 ${notifEnabled ? 'right-0.5' : 'right-6'}`} />
+              </div>
+            </button>
+          </motion.div>
         </div>
       </div>
 
