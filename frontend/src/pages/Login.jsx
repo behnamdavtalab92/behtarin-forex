@@ -153,6 +153,7 @@ export default function Login() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.4 }}
+            style={{ display: 'block' }}
           >
             <button
               onClick={notifSupported ? toggleNotifications : () => alert('برای فعال کردن نوتیفیکیشن، اپ را به صفحه اصلی اضافه کنید (Add to Home Screen)')}
