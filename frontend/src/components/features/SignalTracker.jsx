@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MoreVertical, ArrowLeft, Bell, History } from 'lucide-react';
+import { ArrowLeft, Bell, TrendingUp, TrendingDown, Clock, CheckCircle, Trash2, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTradeSocket } from '../../hooks/useTradeSocket';
 import { getPositions } from '../../services/api';
@@ -12,29 +12,36 @@ const moveToHistory = (signal) => {
     const saved = localStorage.getItem('behtarin_closed_signals');
     const history = saved ? JSON.parse(saved) : [];
     
-    // Add close time
-    signal.closeTime = Date.now();
+    signal.closeTime = signal.closeTime || Date.now();
     
-    // Add to beginning of history
-    history.unshift(signal);
-    
-    // Keep only last 100 signals
-    if (history.length > 100) {
-      history.splice(100);
+    // Check if already exists
+    const exists = history.some(h => h.id === signal.id && h.closeTime === signal.closeTime);
+    if (!exists) {
+      history.unshift(signal);
+      if (history.length > 100) history.splice(100);
+      localStorage.setItem('behtarin_closed_signals', JSON.stringify(history));
+      console.log('📁 Moved to history:', signal.id);
     }
-    
-    localStorage.setItem('behtarin_closed_signals', JSON.stringify(history));
-    console.log('📁 Moved to history:', signal.id);
   } catch (e) {
     console.error('Error moving to history:', e);
   }
 };
 
+// Get symbol display name
+const getSymbolName = (symbol) => {
+  if (symbol?.includes('XAU')) return 'Gold';
+  if (symbol?.includes('XAG')) return 'Silver';
+  if (symbol?.includes('EUR')) return 'EUR/USD';
+  if (symbol?.includes('GBP')) return 'GBP/USD';
+  return symbol?.replace('.ec', '') || 'Unknown';
+};
+
 export default function SignalTracker() {
   const navigate = useNavigate();
   const { notifications } = useTradeSocket();
+  const [activeTab, setActiveTab] = useState('active'); // 'active' or 'history'
   
-  // Load signals from localStorage on mount
+  // Load signals from localStorage
   const [signals, setSignals] = useState(() => {
     try {
       const saved = localStorage.getItem('behtarin_signals');
@@ -44,15 +51,24 @@ export default function SignalTracker() {
     }
   });
   
+  // Load history from localStorage
+  const [history, setHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('behtarin_closed_signals');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  
   const [positions, setPositions] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
   const messagesEndRef = useRef(null);
   const processedNotifs = useRef(new Set());
   const pendingDeals = useRef([]);
-
-  // Track previous positions with their volumes
-  const prevPositionsRef = useRef(new Map()); // code -> { volume, profit, price }
+  const prevPositionsRef = useRef(new Map());
   
-  // Save signals to localStorage whenever they change
+  // Save signals to localStorage
   useEffect(() => {
     try {
       localStorage.setItem('behtarin_signals', JSON.stringify(signals));
@@ -61,12 +77,24 @@ export default function SignalTracker() {
     }
   }, [signals]);
 
-  // Sync positions to signals when app opens or comes to foreground
+  // Reload history when tab changes
+  useEffect(() => {
+    if (activeTab === 'history') {
+      try {
+        const saved = localStorage.getItem('behtarin_closed_signals');
+        setHistory(saved ? JSON.parse(saved) : []);
+      } catch {
+        setHistory([]);
+      }
+    }
+  }, [activeTab]);
+
+  // Sync positions to signals
   const syncPositionsToSignals = async () => {
+    setRefreshing(true);
     const pos = await getPositions();
     const openPositionCodes = new Set();
     
-    // Collect all open position codes
     if (pos && pos.length > 0) {
       pos.forEach(p => {
         const code = p.magic || p.comment || p.id?.toString().slice(-8);
@@ -78,7 +106,7 @@ export default function SignalTracker() {
       const updated = { ...prev };
       let changed = false;
       
-      // Add any open positions that aren't in signals yet
+      // Add new positions
       if (pos && pos.length > 0) {
         pos.forEach(p => {
           const code = p.magic || p.comment || p.id?.toString().slice(-8);
@@ -99,60 +127,51 @@ export default function SignalTracker() {
               liveVolume: p.volume
             };
             changed = true;
-            console.log('📊 Synced new position:', code, p.symbol);
           }
         });
       }
       
-      // Move closed signals (not in open positions) to history
+      // Move closed signals to history
       Object.keys(updated).forEach(code => {
         if (!openPositionCodes.has(code)) {
-          // This signal doesn't have an open position - it's closed
           const signal = updated[code];
-          if (signal.status !== 'closed') {
-            signal.status = 'closed';
-            signal.closeTime = signal.closeTime || Date.now();
-            signal.totalProfit = signal.closeProfit || signal.liveProfit || 0;
-          }
-          
-          // Move to history
+          signal.status = 'closed';
+          signal.closeTime = signal.closeTime || Date.now();
+          signal.totalProfit = signal.closeProfit || signal.liveProfit || 0;
           moveToHistory(signal);
           delete updated[code];
           changed = true;
-          console.log('📁 Moved closed signal to history:', code);
         }
       });
       
       return changed ? updated : prev;
     });
+    
+    setRefreshing(false);
   };
 
-  // Sync on mount
+  // Sync on mount and visibility change
   useEffect(() => {
     syncPositionsToSignals();
   }, []);
 
-  // Sync when app comes to foreground
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        console.log('📱 App visible - syncing positions...');
         syncPositionsToSignals();
       }
     };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
-  // Fetch positions
+  // Fetch positions periodically
   useEffect(() => {
     const fetchPositions = async () => {
       const pos = await getPositions();
       if (pos) {
         const currentPositions = new Map();
         
-        // First pass: collect current positions
         pos.forEach(p => {
           const code = p.magic || p.comment || p.id?.toString().slice(-8);
           currentPositions.set(code, {
@@ -163,50 +182,28 @@ export default function SignalTracker() {
           });
         });
         
-        // Second pass: detect volume changes and update live data
+        // Detect partial closes
         pos.forEach(p => {
           const code = p.magic || p.comment || p.id?.toString().slice(-8);
           const fullId = p.id?.toString() || '';
           const prevData = prevPositionsRef.current.get(code);
           
-          // Detect volume decrease (partial close)
           if (prevData && prevData.volume > p.volume + 0.001) {
             const closedVol = prevData.volume - p.volume;
-            const closedVolume = closedVol.toFixed(2);
-            const remainingVolume = p.volume;
-            
-            // Find matching deal from WebSocket by positionId and volume
             const dealIndex = pendingDeals.current.findIndex(d => {
-              const idMatch = d.positionId === fullId || 
-                              d.positionId.endsWith(code) || 
-                              fullId.endsWith(d.positionId.slice(-8));
+              const idMatch = d.positionId === fullId || d.positionId.endsWith(code);
               const volMatch = Math.abs(d.volume - closedVol) < 0.005;
-              const timeOk = Date.now() - d.timestamp < 15000; // 15 seconds
+              const timeOk = Date.now() - d.timestamp < 15000;
               return idMatch && volMatch && timeOk;
             });
             
-            let profit;
-            let price;
+            let profit = dealIndex !== -1 ? pendingDeals.current[dealIndex].profit : (prevData.profit || 0) * (closedVol / prevData.volume);
+            let price = dealIndex !== -1 ? pendingDeals.current[dealIndex].price : p.currentPrice;
             
-            if (dealIndex !== -1) {
-              // Use accurate profit from WebSocket
-              profit = pendingDeals.current[dealIndex].profit;
-              price = pendingDeals.current[dealIndex].price;
-              console.log('✅ Using WebSocket profit:', profit.toFixed(2));
-              pendingDeals.current.splice(dealIndex, 1);
-            } else {
-              // Fallback: calculate proportional profit
-              const profitPerLot = prevData.volume > 0 ? (prevData.profit || 0) / prevData.volume : 0;
-              profit = profitPerLot * closedVol;
-              price = p.currentPrice;
-              console.log('⚠️ Using calculated profit:', profit.toFixed(2), '(no matching deal found)');
-            }
-            
-            console.log('Volume:', prevData.volume.toFixed(2), '→', p.volume.toFixed(2), '| Profit:', profit.toFixed(2));
+            if (dealIndex !== -1) pendingDeals.current.splice(dealIndex, 1);
             
             setSignals(prev => {
               if (!prev[code]) return prev;
-              
               return {
                 ...prev,
                 [code]: {
@@ -215,8 +212,8 @@ export default function SignalTracker() {
                     ...(prev[code].actions || []),
                     {
                       type: 'partial_close',
-                      closedVolume,
-                      remainingVolume: remainingVolume.toFixed(2),
+                      closedVolume: closedVol.toFixed(2),
+                      remainingVolume: p.volume.toFixed(2),
                       profit,
                       price,
                       timestamp: new Date().toISOString()
@@ -242,42 +239,26 @@ export default function SignalTracker() {
           });
         });
         
-        // Check for positions that completely disappeared (full close)
+        // Check for full closes
         if (prevPositionsRef.current.size > 0) {
           prevPositionsRef.current.forEach((prevData, code) => {
             if (!currentPositions.has(code)) {
-              console.log('Position fully closed:', code);
-              
-              // Find matching deal from WebSocket for accurate profit
               const dealIndex = pendingDeals.current.findIndex(d => {
-                const idMatch = d.positionId.endsWith(code) || code.endsWith(d.positionId.slice(-8));
-                const timeOk = Date.now() - d.timestamp < 15000;
-                return idMatch && timeOk;
+                return d.positionId.endsWith(code) && Date.now() - d.timestamp < 15000;
               });
               
-              let profit = prevData.profit || 0;
-              let price = prevData.price;
+              let profit = dealIndex !== -1 ? pendingDeals.current[dealIndex].profit : prevData.profit || 0;
+              let price = dealIndex !== -1 ? pendingDeals.current[dealIndex].price : prevData.price;
               
-              if (dealIndex !== -1) {
-                profit = pendingDeals.current[dealIndex].profit;
-                price = pendingDeals.current[dealIndex].price;
-                console.log('✅ Using WebSocket profit for close:', profit.toFixed(2));
-                pendingDeals.current.splice(dealIndex, 1);
-              } else {
-                console.log('⚠️ Using last known profit for close:', profit.toFixed(2));
-              }
+              if (dealIndex !== -1) pendingDeals.current.splice(dealIndex, 1);
               
               setSignals(prev => {
                 if (!prev[code] || prev[code].status === 'closed') return prev;
                 
-                // Calculate total P/L = sum of all partial profits + this close profit
                 const existingActions = prev[code].actions || [];
                 const partialProfits = existingActions.reduce((sum, a) => sum + (a.profit || 0), 0);
                 const totalProfit = partialProfits + profit;
                 
-                console.log('Total P/L calculation:', partialProfits.toFixed(2), '+', profit.toFixed(2), '=', totalProfit.toFixed(2));
-                
-                // Create the closed signal
                 const closedSignal = {
                   ...prev[code],
                   status: 'closed',
@@ -287,20 +268,11 @@ export default function SignalTracker() {
                   closeTime: new Date().toISOString(),
                   actions: [
                     ...existingActions,
-                    {
-                      type: 'closed',
-                      price,
-                      profit,
-                      volume: prevData.volume?.toFixed(2),
-                      timestamp: new Date().toISOString()
-                    }
+                    { type: 'closed', price, profit, volume: prevData.volume?.toFixed(2), timestamp: new Date().toISOString() }
                   ]
                 };
                 
-                // Move to history
                 moveToHistory(closedSignal);
-                
-                // Remove from active signals
                 const { [code]: removed, ...remaining } = prev;
                 return remaining;
               });
@@ -308,17 +280,17 @@ export default function SignalTracker() {
           });
         }
         
-        // Update refs for next comparison
         prevPositionsRef.current = currentPositions;
         setPositions(pos);
       }
     };
+    
     fetchPositions();
-    const interval = setInterval(fetchPositions, 2000); // Update P/L every 2 seconds
+    const interval = setInterval(fetchPositions, 2000);
     return () => clearInterval(interval);
   }, []);
 
-  // Convert notifications to signals
+  // Handle WebSocket notifications
   useEffect(() => {
     if (notifications.length > 0) {
       const notif = notifications[0];
@@ -331,7 +303,6 @@ export default function SignalTracker() {
       
       if (notif.event === 'position_opened') {
         const isBuy = notif.data?.type?.includes('BUY');
-        
         setSignals(prev => ({
           ...prev,
           [signalCode]: {
@@ -349,277 +320,262 @@ export default function SignalTracker() {
             liveVolume: notif.data?.volume
           }
         }));
-        
       } else if (notif.event === 'deal_closed') {
-        // Save accurate profit from deal
-        const positionId = notif.data?.positionId?.toString() || '';
-        const dealProfit = notif.data?.profit || 0;
-        const dealVolume = notif.data?.volume || 0;
-        const dealPrice = notif.data?.price;
-        
-        console.log('Deal closed:', { positionId, profit: dealProfit, volume: dealVolume });
-        
-        // Store by positionId (full ID)
         pendingDeals.current.push({
-          positionId,
-          profit: dealProfit,
-          volume: dealVolume,
-          price: dealPrice,
+          positionId: notif.data?.positionId?.toString() || '',
+          profit: notif.data?.profit || 0,
+          volume: notif.data?.volume || 0,
+          price: notif.data?.price,
           timestamp: Date.now()
         });
-        
-        // Keep only last 20 deals, remove old ones
-        if (pendingDeals.current.length > 20) {
-          pendingDeals.current = pendingDeals.current.slice(-20);
-        }
-        
-      } else if (notif.event === 'position_closed') {
-        console.log('Ignoring position_closed');
+        if (pendingDeals.current.length > 20) pendingDeals.current.splice(0, pendingDeals.current.length - 20);
       }
     }
   }, [notifications]);
 
-  // Auto scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [signals]);
+  // Calculate totals
+  const activeSignals = Object.values(signals);
+  const totalActiveProfit = activeSignals.reduce((sum, s) => sum + (s.liveProfit || 0), 0);
+  const totalHistoryProfit = history.reduce((sum, s) => sum + (s.totalProfit || 0), 0);
 
-  // Get active signals
-  const activeSignals = positions.map(pos => ({
-    code: pos.magic || pos.comment || pos.id?.toString().slice(-8),
-    symbol: pos.symbol,
-    type: pos.type?.includes('BUY') ? 'BUY' : 'SELL',
-    volume: pos.volume,
-    profit: pos.profit
-  }));
-
-  // Convert signals object to array sorted by time
-  const signalsList = Object.values(signals).sort((a, b) => 
-    new Date(a.openTime) - new Date(b.openTime)
-  );
+  // Clear history
+  const clearHistory = () => {
+    if (confirm('تمام تاریخچه پاک شود؟')) {
+      localStorage.removeItem('behtarin_closed_signals');
+      setHistory([]);
+    }
+  };
 
   return (
-    <div className="h-screen flex flex-col bg-[#0e1621] safe-top">
+    <div className="min-h-[100dvh] flex flex-col bg-[#0e1621]">
       {/* Header */}
-      <div className="bg-[#17212b] text-white p-3 pt-[max(0.75rem,env(safe-area-inset-top))] flex items-center justify-between shadow-lg">
+      <div className="bg-[#17212b] text-white p-3 pt-[max(0.75rem,env(safe-area-inset-top))] flex items-center justify-between shadow-lg flex-shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/login')} className="p-1 hover:bg-white/10 rounded-lg transition">
+          <button onClick={() => navigate('/login')} className="p-2 hover:bg-white/10 rounded-lg transition active:scale-95">
             <ArrowLeft size={22} className="text-gray-400" />
           </button>
           <div>
             <div className="font-bold text-[15px]">📊 Signal Tracker</div>
             <div className="text-[11px] text-gray-400">
-              {activeSignals.length} سیگنال فعال
+              {activeSignals.length} فعال • {history.length} بسته شده
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => navigate('/history')} 
-            className="p-2 hover:bg-white/10 rounded-lg transition"
-          >
-            <History size={20} className="text-gray-400" />
-          </button>
-          <MoreVertical size={20} className="text-gray-400" />
-        </div>
+        <button 
+          onClick={syncPositionsToSignals}
+          disabled={refreshing}
+          className="p-2 hover:bg-white/10 rounded-lg transition active:scale-95"
+        >
+          <RefreshCw size={20} className={`text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
-      {/* Active Signals Bar */}
-      {activeSignals.length > 0 && (
-        <div className="bg-[#1c2733] px-3 py-2 flex gap-2 overflow-x-auto border-b border-[#0e1621]">
-          {activeSignals.map((signal, idx) => (
-            <div 
-              key={idx}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs whitespace-nowrap ${
-                signal.type === 'BUY' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-              }`}
-            >
-              <span className="font-mono font-bold">{signal.code}</span>
-              <span>{signal.symbol}</span>
-              <span className="text-gray-400">{signal.volume}lot</span>
-              <span className={signal.profit >= 0 ? 'text-green-400' : 'text-red-400'}>
-                {signal.profit >= 0 ? '+' : ''}{signal.profit?.toFixed(1)}$
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Signals */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        <div className="flex justify-center">
-          <div className="bg-[#182533] text-gray-400 text-[11px] px-3 py-1 rounded-full">
-            امروز
+      {/* Tabs */}
+      <div className="flex bg-[#17212b] border-b border-[#0e1621] flex-shrink-0">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`flex-1 py-3 text-sm font-medium transition-all relative ${
+            activeTab === 'active' ? 'text-green-400' : 'text-gray-500'
+          }`}
+        >
+          <div className="flex items-center justify-center gap-2">
+            <Clock size={16} />
+            <span>فعال ({activeSignals.length})</span>
           </div>
-        </div>
-
-        {signalsList.length === 0 && (
-          <div className="flex justify-center mt-10">
-            <div className="bg-[#182533] text-gray-400 text-sm px-4 py-3 rounded-xl text-center">
-              <Bell size={32} className="mx-auto mb-2 opacity-50" />
-              <div>منتظر سیگنال‌های جدید...</div>
-            </div>
+          {activeTab === 'active' && (
+            <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-green-500" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`flex-1 py-3 text-sm font-medium transition-all relative ${
+            activeTab === 'history' ? 'text-blue-400' : 'text-gray-500'
+          }`}
+        >
+          <div className="flex items-center justify-center gap-2">
+            <CheckCircle size={16} />
+            <span>تاریخچه ({history.length})</span>
           </div>
-        )}
-
-        <AnimatePresence>
-          {signalsList.map((signal) => (
-            <motion.div
-              key={signal.id}
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="flex justify-start"
-            >
-              <SignalCard signal={signal} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
-        <div ref={messagesEndRef} />
+          {activeTab === 'history' && (
+            <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+          )}
+        </button>
       </div>
 
-      {/* Footer */}
-      <div className="bg-[#17212b] border-t border-[#0e1621] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span>متصل به MetaTrader</span>
-          </div>
-          <span>t.me/behtarinforex</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SignalCard({ signal }) {
-  const { id, symbol, type, isBuy, openPrice, volume, openTime, status, actions, liveProfit, livePrice, closeProfit } = signal;
-  
-  const getSymbolName = (sym) => {
-    if (sym?.includes('XAU')) return 'Gold';
-    if (sym?.includes('XAG')) return 'Silver';
-    return sym;
-  };
-
-  const bgColor = isBuy 
-    ? 'bg-gradient-to-br from-green-900/40 to-green-800/20 border-green-500/30' 
-    : 'bg-gradient-to-br from-red-900/40 to-red-800/20 border-red-500/30';
-
-  const currentProfit = status === 'closed' ? closeProfit : liveProfit;
-  const isProfitPositive = currentProfit >= 0;
-  const hasActions = actions && actions.length > 0;
-
-  return (
-    <div dir="ltr" className={`w-[280px] rounded-2xl rounded-tl-md border ${bgColor} overflow-hidden`}>
-      {/* Header */}
-      <div className="px-3 py-2 border-b border-white/10">
-        <div className="flex items-center gap-1.5 flex-wrap text-left">
-          <span className={`text-base ${isBuy ? 'text-green-500' : 'text-red-500'}`}>
-            {isBuy ? '🟢' : '🔴'}
-          </span>
-          <span className="text-white font-bold">{getSymbolName(symbol)}</span>
-          <span className={`font-bold text-sm ${isBuy ? 'text-green-400' : 'text-red-400'}`}>
-            {isBuy ? 'Buy' : 'Sell'}
-          </span>
-          <span className="text-gray-400 text-sm">({formatPrice(symbol, openPrice)})</span>
-          <span className="text-yellow-500 font-mono text-xs">#{id}</span>
-        </div>
-      </div>
-      
-      {/* Volume */}
-      <div className="px-3 py-1.5 flex justify-between items-center">
-        <span className="text-gray-400 text-xs">Volume</span>
-        <span className="font-mono text-white text-sm">{volume} lot</span>
-      </div>
-      
-      {/* Live P/L */}
-      {currentProfit !== undefined && currentProfit !== null && (
-        <div className="px-3 py-1.5 border-t border-white/5">
-          <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isProfitPositive ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
-            <span className="text-gray-300 text-xs">P/L</span>
-            <span className={`font-mono font-bold ${isProfitPositive ? 'text-green-400' : 'text-red-400'}`}>
-              {isProfitPositive ? '+' : ''}{currentProfit?.toFixed(2)}$
+      {/* Total Profit Bar */}
+      {activeTab === 'active' && activeSignals.length > 0 && (
+        <div className={`px-4 py-2 ${totalActiveProfit >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'} flex-shrink-0`}>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400 text-xs">سود/زیان لحظه‌ای:</span>
+            <span className={`font-bold ${totalActiveProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {totalActiveProfit >= 0 ? '+' : ''}{totalActiveProfit.toFixed(2)}$
             </span>
           </div>
         </div>
       )}
 
-      {/* Actions - Added as extra lines */}
-      {hasActions && (
-        <div className="border-t border-white/10">
-          {actions.map((action, idx) => (
-            <ActionLine key={idx} action={action} symbol={symbol} signalCloseProfit={signal.closeProfit} />
-          ))}
+      {activeTab === 'history' && history.length > 0 && (
+        <div className={`px-4 py-2 ${totalHistoryProfit >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'} flex items-center justify-between flex-shrink-0`}>
+          <span className="text-gray-400 text-xs">مجموع سود/زیان:</span>
+          <div className="flex items-center gap-3">
+            <span className={`font-bold ${totalHistoryProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {totalHistoryProfit >= 0 ? '+' : ''}{totalHistoryProfit.toFixed(2)}$
+            </span>
+            <button onClick={clearHistory} className="p-1 hover:bg-red-500/20 rounded transition">
+              <Trash2 size={14} className="text-red-400" />
+            </button>
+          </div>
         </div>
       )}
-      
-      {/* Footer */}
-      <div className="px-3 py-1 flex justify-between items-center border-t border-white/5">
-        <span className={`text-[10px] ${status === 'closed' ? 'text-gray-500' : 'text-green-400'}`}>
-          ● {status === 'closed' ? 'Closed' : 'Active'}
-        </span>
-        <span className="text-[10px] text-gray-500">
-          {new Date(openTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-        </span>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <AnimatePresence mode="wait">
+          {activeTab === 'active' ? (
+            <motion.div
+              key="active"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="space-y-3"
+            >
+              {activeSignals.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                  <Bell size={48} className="mb-3 opacity-50" />
+                  <p className="text-sm">معامله فعالی وجود ندارد</p>
+                  <p className="text-xs text-gray-600 mt-1">منتظر سیگنال‌های جدید...</p>
+                </div>
+              ) : (
+                activeSignals.map((signal) => (
+                  <motion.div
+                    key={signal.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-[#182533] rounded-xl overflow-hidden border border-white/5"
+                  >
+                    {/* Signal Header */}
+                    <div className={`p-3 ${signal.isBuy ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {signal.isBuy ? (
+                            <TrendingUp size={18} className="text-green-400" />
+                          ) : (
+                            <TrendingDown size={18} className="text-red-400" />
+                          )}
+                          <span className="text-white font-bold">{getSymbolName(signal.symbol)}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${signal.isBuy ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                            {signal.isBuy ? 'BUY' : 'SELL'}
+                          </span>
+                        </div>
+                        <span className="text-gray-500 text-xs font-mono">#{signal.id}</span>
+                      </div>
+                    </div>
+                    
+                    {/* Signal Body */}
+                    <div className="p-3 space-y-2">
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="text-gray-500 block">Entry</span>
+                          <span className="text-white">{formatPrice(signal.openPrice, signal.symbol)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 block">Current</span>
+                          <span className="text-white">{formatPrice(signal.livePrice, signal.symbol)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 block">Volume</span>
+                          <span className="text-white">{signal.liveVolume?.toFixed(2) || signal.volume} lot</span>
+                        </div>
+                      </div>
+                      
+                      {/* Live P/L */}
+                      <div className={`text-center py-2 rounded-lg ${(signal.liveProfit || 0) >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                        <span className={`font-bold text-lg ${(signal.liveProfit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {(signal.liveProfit || 0) >= 0 ? '+' : ''}{(signal.liveProfit || 0).toFixed(2)}$
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-3"
+            >
+              {history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                  <CheckCircle size={48} className="mb-3 opacity-50" />
+                  <p className="text-sm">تاریخچه خالی است</p>
+                  <p className="text-xs text-gray-600 mt-1">معاملات بسته شده اینجا نمایش داده می‌شوند</p>
+                </div>
+              ) : (
+                history.map((signal, idx) => (
+                  <motion.div
+                    key={signal.id + '-' + idx}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.03 }}
+                    className="bg-[#182533] rounded-xl overflow-hidden border border-white/5"
+                  >
+                    {/* Signal Header */}
+                    <div className="p-3 bg-[#1c2733]">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {signal.isBuy ? (
+                            <TrendingUp size={16} className="text-green-400" />
+                          ) : (
+                            <TrendingDown size={16} className="text-red-400" />
+                          )}
+                          <span className="text-white font-medium text-sm">{getSymbolName(signal.symbol)}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${signal.isBuy ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                            {signal.isBuy ? 'BUY' : 'SELL'}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-gray-500 text-[10px] font-mono block">#{signal.id}</span>
+                          <span className="text-gray-600 text-[10px]">
+                            {new Date(signal.closeTime).toLocaleDateString('fa-IR')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Signal Body */}
+                    <div className="p-3 space-y-2">
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="text-gray-500 block">Entry</span>
+                          <span className="text-white">{formatPrice(signal.openPrice, signal.symbol)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 block">Close</span>
+                          <span className="text-white">{formatPrice(signal.closePrice, signal.symbol)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 block">Volume</span>
+                          <span className="text-white">{signal.volume} lot</span>
+                        </div>
+                      </div>
+                      
+                      {/* P/L */}
+                      <div className={`text-center py-2 rounded-lg ${(signal.totalProfit || 0) >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                        <span className={`font-bold ${(signal.totalProfit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {(signal.totalProfit || 0) >= 0 ? '+' : ''}{(signal.totalProfit || 0).toFixed(2)}$
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
-}
-
-function ActionLine({ action, symbol, signalCloseProfit }) {
-  const { type, closedVolume, remainingVolume, profit, price, timestamp } = action;
-  const isProfit = (profit ?? 0) >= 0;
-
-  if (type === 'partial_close') {
-    return (
-      <div className="px-3 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-yellow-400">📦</span>
-            <span className="text-gray-300">Partial Close</span>
-          </div>
-          <span className="text-gray-500 text-[10px]">
-            {new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
-        <div className="flex items-center justify-between mt-1">
-          <div className="flex items-center gap-3 text-xs">
-            <span className="text-red-400">-{closedVolume} lot</span>
-            <span className="text-gray-500">→</span>
-            <span className="text-green-400">{remainingVolume} lot</span>
-          </div>
-          <span className={`font-mono font-bold text-xs ${isProfit ? 'text-green-400' : 'text-red-400'}`}>
-            {isProfit ? '+' : ''}{profit?.toFixed(2)}$
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  if (type === 'closed') {
-    // Use signal's total closeProfit from MetaTrader
-    const totalPnL = signalCloseProfit ?? profit ?? 0;
-    const isTotalProfit = totalPnL >= 0;
-    return (
-      <div className="px-3 py-2 bg-gray-500/10 border-b border-gray-500/20">
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-gray-400">✅</span>
-            <span className="text-gray-300">Fully Closed</span>
-            <span className="text-gray-500">({formatPrice(symbol, price)})</span>
-          </div>
-          <span className="text-gray-500 text-[10px]">
-            {new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
-        <div className="flex items-center justify-end mt-1">
-          <span className={`font-mono font-bold text-sm ${isTotalProfit ? 'text-green-400' : 'text-red-400'}`}>
-            Total P/L: {isTotalProfit ? '+' : ''}{totalPnL?.toFixed(2)}$
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
 }
