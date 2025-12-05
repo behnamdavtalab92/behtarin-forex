@@ -48,19 +48,22 @@ export default function TradeHistory() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-[#0e1621]">
+    <div className="min-h-[100dvh] flex flex-col bg-[#0e1621]">
+      {/* Safe Area Top Spacer */}
+      <div className="bg-[#17212b]" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }} />
+      
       {/* Header */}
-      <div className="bg-[#17212b] text-white p-3 pt-[max(0.75rem,env(safe-area-inset-top))] flex items-center justify-between shadow-lg">
+      <div className="bg-[#17212b] text-white px-4 py-3 flex items-center justify-between shadow-lg sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-1 hover:bg-white/10 rounded-lg transition">
-            <ArrowLeft size={22} className="text-gray-400" />
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-xl transition active:scale-95">
+            <ArrowLeft size={24} className="text-gray-300" />
           </button>
           <div>
-            <div className="font-bold text-[15px] flex items-center gap-2">
-              <History size={18} />
+            <div className="font-bold text-base flex items-center gap-2">
+              <History size={20} className="text-blue-400" />
               تاریخچه معاملات
             </div>
-            <div className="text-[11px] text-gray-400">
+            <div className="text-xs text-gray-400">
               {closedSignals.length} معامله بسته شده
             </div>
           </div>
@@ -68,9 +71,9 @@ export default function TradeHistory() {
         {closedSignals.length > 0 && (
           <button 
             onClick={clearHistory}
-            className="p-2 hover:bg-red-500/20 rounded-lg transition"
+            className="p-2.5 bg-red-500/20 hover:bg-red-500/30 rounded-xl transition active:scale-95"
           >
-            <Trash2 size={18} className="text-red-400" />
+            <Trash2 size={20} className="text-red-400" />
           </button>
         )}
       </div>
