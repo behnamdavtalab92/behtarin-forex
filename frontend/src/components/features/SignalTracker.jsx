@@ -37,6 +37,62 @@ export default function SignalTracker() {
     }
   }, [signals]);
 
+  // Sync positions to signals when app opens or comes to foreground
+  const syncPositionsToSignals = async () => {
+    const pos = await getPositions();
+    if (!pos || pos.length === 0) return;
+    
+    // Add any open positions that aren't in signals yet
+    setSignals(prev => {
+      const updated = { ...prev };
+      let changed = false;
+      
+      pos.forEach(p => {
+        const code = p.magic || p.comment || p.id?.toString().slice(-8);
+        if (!updated[code]) {
+          // Position exists but not in signals - add it
+          const isBuy = p.type?.includes('BUY');
+          updated[code] = {
+            id: code,
+            symbol: p.symbol,
+            type: isBuy ? 'buy' : 'sell',
+            isBuy,
+            openPrice: p.openPrice,
+            volume: p.volume,
+            openTime: p.time || Date.now(),
+            status: 'active',
+            actions: [],
+            liveProfit: p.profit || 0,
+            livePrice: p.currentPrice,
+            liveVolume: p.volume
+          };
+          changed = true;
+          console.log('📊 Synced position:', code, p.symbol);
+        }
+      });
+      
+      return changed ? updated : prev;
+    });
+  };
+
+  // Sync on mount
+  useEffect(() => {
+    syncPositionsToSignals();
+  }, []);
+
+  // Sync when app comes to foreground
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('📱 App visible - syncing positions...');
+        syncPositionsToSignals();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   // Fetch positions
   useEffect(() => {
     const fetchPositions = async () => {
