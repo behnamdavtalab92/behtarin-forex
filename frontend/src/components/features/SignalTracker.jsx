@@ -418,11 +418,14 @@ export default function SignalTracker() {
         </div>
         <div className="flex items-center gap-1">
           <button 
-            onClick={() => navigate('/history')} 
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 rounded-xl transition active:scale-95"
+            onClick={() => {
+              console.log('History button clicked');
+              navigate('/history');
+            }} 
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-500 hover:bg-blue-600 rounded-xl transition active:scale-95 shadow-lg"
           >
-            <History size={18} className="text-blue-400" />
-            <span className="text-blue-400 text-xs font-medium">تاریخچه</span>
+            <History size={20} className="text-white" />
+            <span className="text-white text-sm font-bold">تاریخچه</span>
           </button>
         </div>
       </div>
