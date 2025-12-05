@@ -64,34 +64,62 @@ export default function SignalTracker() {
   // Sync positions to signals when app opens or comes to foreground
   const syncPositionsToSignals = async () => {
     const pos = await getPositions();
-    if (!pos || pos.length === 0) return;
+    const openPositionCodes = new Set();
     
-    // Add any open positions that aren't in signals yet
+    // Collect all open position codes
+    if (pos && pos.length > 0) {
+      pos.forEach(p => {
+        const code = p.magic || p.comment || p.id?.toString().slice(-8);
+        openPositionCodes.add(code);
+      });
+    }
+    
     setSignals(prev => {
       const updated = { ...prev };
       let changed = false;
       
-      pos.forEach(p => {
-        const code = p.magic || p.comment || p.id?.toString().slice(-8);
-        if (!updated[code]) {
-          // Position exists but not in signals - add it
-          const isBuy = p.type?.includes('BUY');
-          updated[code] = {
-            id: code,
-            symbol: p.symbol,
-            type: isBuy ? 'buy' : 'sell',
-            isBuy,
-            openPrice: p.openPrice,
-            volume: p.volume,
-            openTime: p.time || Date.now(),
-            status: 'active',
-            actions: [],
-            liveProfit: p.profit || 0,
-            livePrice: p.currentPrice,
-            liveVolume: p.volume
-          };
+      // Add any open positions that aren't in signals yet
+      if (pos && pos.length > 0) {
+        pos.forEach(p => {
+          const code = p.magic || p.comment || p.id?.toString().slice(-8);
+          if (!updated[code]) {
+            const isBuy = p.type?.includes('BUY');
+            updated[code] = {
+              id: code,
+              symbol: p.symbol,
+              type: isBuy ? 'buy' : 'sell',
+              isBuy,
+              openPrice: p.openPrice,
+              volume: p.volume,
+              openTime: p.time || Date.now(),
+              status: 'active',
+              actions: [],
+              liveProfit: p.profit || 0,
+              livePrice: p.currentPrice,
+              liveVolume: p.volume
+            };
+            changed = true;
+            console.log('📊 Synced new position:', code, p.symbol);
+          }
+        });
+      }
+      
+      // Move closed signals (not in open positions) to history
+      Object.keys(updated).forEach(code => {
+        if (!openPositionCodes.has(code)) {
+          // This signal doesn't have an open position - it's closed
+          const signal = updated[code];
+          if (signal.status !== 'closed') {
+            signal.status = 'closed';
+            signal.closeTime = signal.closeTime || Date.now();
+            signal.totalProfit = signal.closeProfit || signal.liveProfit || 0;
+          }
+          
+          // Move to history
+          moveToHistory(signal);
+          delete updated[code];
           changed = true;
-          console.log('📊 Synced position:', code, p.symbol);
+          console.log('📁 Moved closed signal to history:', code);
         }
       });
       
